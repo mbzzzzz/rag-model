@@ -166,30 +166,47 @@ def upload_document():
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
     
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No file selected'}), 400
+    files = request.files.getlist('file')
+    if not files or all(file.filename == '' for file in files):
+        return jsonify({'error': 'No files selected'}), 400
     
-    # Save uploaded file to temporary location
-    with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{file.filename}") as temp_file:
-        file.save(temp_file.name)
-        temp_filename = temp_file.name
+    processed_files = []
+    errors = []
     
-    try:
-        # Process document
-        file_type = file.filename.split('.')[-1].lower()
-        success, message = rag_system.process_document(temp_filename, file_type)
+    for file in files:
+        if file.filename == '':
+            continue
+            
+        # Save uploaded file to temporary location
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{file.filename}") as temp_file:
+            file.save(temp_file.name)
+            temp_filename = temp_file.name
         
-        if success:
-            return jsonify({'message': message})
-        else:
-            return jsonify({'error': message}), 500
-    finally:
-        # Clean up temporary file
         try:
-            os.unlink(temp_filename)
-        except:
-            pass
+            # Process document
+            file_type = file.filename.split('.')[-1].lower()
+            success, message = rag_system.process_document(temp_filename, file_type)
+            
+            if success:
+                processed_files.append(file.filename)
+            else:
+                errors.append(f"{file.filename}: {message}")
+        except Exception as e:
+            errors.append(f"{file.filename}: {str(e)}")
+        finally:
+            # Clean up temporary file
+            try:
+                os.unlink(temp_filename)
+            except:
+                pass
+    
+    if processed_files:
+        success_message = f"Successfully processed {len(processed_files)} file(s): {', '.join(processed_files)}"
+        if errors:
+            success_message += f" Errors: {'; '.join(errors)}"
+        return jsonify({'message': success_message})
+    else:
+        return jsonify({'error': f"Failed to process any files. Errors: {'; '.join(errors)}"}), 500
 
 @app.route('/chat', methods=['POST'])
 def chat():

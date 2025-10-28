@@ -452,7 +452,7 @@
 
             if (selectedFiles.length > 0) {
                 uploadBtn.disabled = false;
-                uploadBtn.textContent = `Upload ${selectedFiles.length} file(s)`;
+                uploadBtn.textContent = `Upload ${selectedFiles.length} file${selectedFiles.length === 1 ? '' : 's'}`;
             } else {
                 uploadBtn.disabled = true;
                 uploadBtn.textContent = 'Upload Files';
@@ -482,7 +482,8 @@
                     showStatusMessage(result.message, 'success');
                     addMessage('bot', `Great! I've processed ${selectedFiles.length} document(s). You can now ask me questions about them!`);
                 } else {
-                    showStatusMessage(result.error, 'error');
+                    showStatusMessage(result.error || 'Upload failed', 'error');
+                    addMessage('bot', 'Sorry, there was an error uploading your documents. Please try again.');
                 }
             } catch (error) {
                 showStatusMessage('Upload failed: ' + error.message, 'error');
