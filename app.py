@@ -5,11 +5,11 @@ import json
 import uuid
 import tempfile
 from anthropic import Anthropic
-import chromadb
-from sentence_transformers import SentenceTransformer
 import PyPDF2
 from docx import Document
 import numpy as np
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -22,20 +22,17 @@ CORS(app)
 # Initialize Claude client with the most cost-effective model
 client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 
-# Initialize ChromaDB for vector storage (in-memory for serverless)
-chroma_client = chromadb.Client()
-collection = chroma_client.create_collection(name="documents")
-
-# Initialize sentence transformer for embeddings
-model = SentenceTransformer('all-MiniLM-L6-v2')
+# Simple in-memory storage for documents
+documents_storage = []
 
 class RAGSystem:
     def __init__(self):
-        self.collection = collection
-        self.embedding_model = model
+        self.documents = []
+        self.vectorizer = TfidfVectorizer(max_features=1000, stop_words='english')
+        self.tfidf_matrix = None
         
     def process_document(self, file_path, file_type):
-        """Process uploaded document and create embeddings"""
+        """Process uploaded document and create text chunks"""
         try:
             if file_type == 'pdf':
                 text = self.extract_pdf_text(file_path)
@@ -47,16 +44,18 @@ class RAGSystem:
             # Split text into chunks
             chunks = self.split_text_into_chunks(text)
             
-            # Create embeddings and store in ChromaDB
+            # Store chunks
             for i, chunk in enumerate(chunks):
-                embedding = self.embedding_model.encode(chunk).tolist()
-                doc_id = f"{file_path}_{i}"
-                self.collection.add(
-                    embeddings=[embedding],
-                    documents=[chunk],
-                    ids=[doc_id],
-                    metadatas=[{"source": file_path, "chunk_id": i}]
-                )
+                self.documents.append({
+                    'text': chunk,
+                    'source': file_path,
+                    'chunk_id': i
+                })
+            
+            # Update TF-IDF matrix
+            if self.documents:
+                texts = [doc['text'] for doc in self.documents]
+                self.tfidf_matrix = self.vectorizer.fit_transform(texts)
             
             return True, f"Processed {len(chunks)} chunks from {file_path}"
         except Exception as e:
@@ -96,15 +95,29 @@ class RAGSystem:
         return chunks
     
     def retrieve_relevant_chunks(self, query, top_k=3):
-        """Retrieve relevant chunks based on query"""
-        query_embedding = self.embedding_model.encode(query).tolist()
+        """Retrieve relevant chunks based on query using TF-IDF"""
+        if not self.documents or self.tfidf_matrix is None:
+            return [], []
         
-        results = self.collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k
-        )
+        # Transform query using the same vectorizer
+        query_vector = self.vectorizer.transform([query])
         
-        return results['documents'][0], results['metadatas'][0]
+        # Calculate cosine similarity
+        similarities = cosine_similarity(query_vector, self.tfidf_matrix).flatten()
+        
+        # Get top-k most similar documents
+        top_indices = similarities.argsort()[-top_k:][::-1]
+        
+        chunks = []
+        metadata = []
+        for idx in top_indices:
+            chunks.append(self.documents[idx]['text'])
+            metadata.append({
+                'source': self.documents[idx]['source'],
+                'chunk_id': self.documents[idx]['chunk_id']
+            })
+        
+        return chunks, metadata
     
     def generate_response(self, query, context_chunks):
         """Generate response using Claude with retrieved context"""
