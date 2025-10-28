@@ -13,7 +13,11 @@ from sklearn.metrics.pairwise import cosine_similarity
 from dotenv import load_dotenv
 
 # Load environment variables
-load_dotenv()
+try:
+    load_dotenv()
+except UnicodeDecodeError:
+    # Skip loading .env file if there are encoding issues
+    pass
 
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'your-secret-key-here')

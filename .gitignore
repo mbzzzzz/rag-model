@@ -49,3 +49,4 @@ chroma_db/
 
 # Logs
 *.log
+.vercel
