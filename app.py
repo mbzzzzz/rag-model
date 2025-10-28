@@ -19,6 +19,9 @@ except UnicodeDecodeError:
     # Skip loading .env file if there are encoding issues
     pass
 
+# Set environment variable to disable multiprocessing in serverless environment
+os.environ['JOBLIB_MULTIPROCESSING'] = '0'
+
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'your-secret-key-here')
 CORS(app)
@@ -208,9 +211,8 @@ def chat():
         'sources': metadata
     })
 
-# Vercel handler
-def handler(request):
-    return app(request.environ, lambda *args: None)
+# Vercel handler - this is the entry point for Vercel
+# The app variable is already the Flask WSGI application
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
